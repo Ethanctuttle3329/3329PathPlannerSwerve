@@ -2,16 +2,20 @@ package frc.robot.subsystems;
 
 import com.ctre.phoenix6.hardware.Pigeon2;
 import com.pathplanner.lib.auto.AutoBuilder;
+import com.pathplanner.lib.config.ModuleConfig;
+import com.pathplanner.lib.config.PIDConstants;
+import com.pathplanner.lib.config.RobotConfig;
+import com.pathplanner.lib.controllers.PPHolonomicDriveController;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
-import edu.wpi.first.math.kinematics.Kinematics;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.kinematics.SwerveDriveOdometry;
 import edu.wpi.first.math.kinematics.SwerveModulePosition;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
@@ -42,29 +46,24 @@ public class Swerve extends SubsystemBase {
         SmartDashboard.putData("Gyro", gyro);
 
         swerveOdometry = new SwerveDriveOdometry(Constants.Swerve.swerveKinematics, getYaw(), getStates());
-
-        AutoBuilder.configureHolonomic(
-        this::getPose,
-        this::resetOdometry,
-        this::getRobotRelativeSpeeds,
-        null, null, null, null);
     }
 
     public void drive(Translation2d translation, double rotation, boolean fieldRelative, boolean isOpenLoop) {
-        SwerveModuleState[] swerveModuleStates = Constants.Swerve.swerveKinematics.toSwerveModuleStates(
-                fieldRelative
-                        ? ChassisSpeeds.fromFieldRelativeSpeeds(
-                                translation.getX(), translation.getY(), rotation, getYaw())
-                        : new ChassisSpeeds(translation.getX(), translation.getY(), rotation));
-        SwerveDriveKinematics.desaturateWheelSpeeds(swerveModuleStates, Constants.Swerve.maxSpeed);
-
-        for (frc.robot.subsystems.SwerveModule mod : mSwerveMods) {
-            mod.setDesiredState(swerveModuleStates[mod.moduleNumber], isOpenLoop);
-        }
+        drive(
+            new ChassisSpeeds(translation.getX(), translation.getY(), rotation),
+             fieldRelative, isOpenLoop
+        );
     }
 
-    public ChassisSpeeds getRobotRelativeSpeeds(){
-        return ChassisSpeeds speeds = kinematics.toChassisSpeeds(mSwerveMods[0].getState(), mSwerveMods[1].getState(), mSwerveMods[2].getState(), mSwerveMods[3].getState());
+    public void drive(ChassisSpeeds speeds, boolean fieldRelative, boolean isOpenLoop){
+        SwerveModuleState[] swerveModuleStates = Constants.Swerve.swerveKinematics.toSwerveModuleStates(
+            fieldRelative 
+            ? ChassisSpeeds.fromFieldRelativeSpeeds(speeds, getYaw())
+            :speeds);
+        SwerveDriveKinematics.desaturateWheelSpeeds(swerveModuleStates, Constants.Swerve.maxSpeed);
+        for (frc.robot.subsystems.SwerveModule mod : mSwerveMods){
+            mod.setDesiredState(swerveModuleStates[mod.moduleNumber], isOpenLoop);
+        }
     }
 
     public void setModuleStates(SwerveModuleState[] desiredStates) {
@@ -137,4 +136,23 @@ public class Swerve extends SubsystemBase {
                     "Mod " + mod.moduleNumber + " Module Angle", mod.getState().angle.getDegrees());
         }
     }
+
+    AutoBuilder.configure(
+        this::getPose,
+        this::resetOdometry,
+        () -> kinematics.toChassisSpeeds(getModuleStates()),
+        (speeds) -> drive(speeds, false, false),
+        new PPHolonomicDriveController(
+            new PIDConstants(Constants.Swerve.driveKP, Constants.Swerve.driveKI, Constants.Swerve.driveKD),
+            new PIDConstants(Constants.Swerve.angleKP, Constants.Swerve.angleKI, Constants.Swerve.angleKD)),
+        new RobotConfig(0, 0, null, 0),
+        () -> {
+            var alliance = DriverStation.getAlliance();
+            if(alliance.isPresent()){
+                return alliance.get() == DriverStation.Alliance.Red;
+            }
+            return false;
+        },
+        this
+    ); 
 }
