@@ -52,6 +52,7 @@ public class RobotContainer
 
   public RobotContainer()
   {
+    autonChooser.setDefaultOption("Four Piece", "FourPiece");
     configureBindings();
   }
   
